@@ -2,157 +2,216 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import quad
 
-# ЗАДАНА ФУНКЦІЯ (навантаження на сервер)
+# =========================================================
+# 1. ЗАДАНА ФУНКЦІЯ
+# навантаження на сервер 
+# =========================================================
 def f(x):
     return 50 + 20 * np.sin(np.pi * x / 12) + 5 * np.exp(-0.2 * (x - 12)**2)
 
-# ТОЧНЕ ЗНАЧЕННЯ ІНТЕГРАЛУ
 a, b = 0, 24
-I_exact, _ = quad(f, a, b)
-print("\n=== Точне значення (еталон) ===")
-print(I_exact)
 
-# 3. СКЛАДОВА ФОРМУЛА СІМПСОНА
-# n - кількість розбиттів
 # =========================================================
-def simpson(f, a, b, n):
-    if n % 2 != 0:
-        n += 1  # щоб була парність
+# 2. ТОЧНЕ ЗНАЧЕННЯ ІНТЕГРАЛУ
+# =========================================================
+I0, _ = quad(f, a, b)
 
-    h = (b - a) / n  # крок
-    x = np.linspace(a, b, n + 1)  # вузли
+print("=== Точне значення інтегралу ===")
+print("I0 =", I0)
+
+# =========================================================
+# 3. СКЛАДОВА ФОРМУЛА СІМПСОНА
+
+# =========================================================
+def simpson(f, a, b, N):
+    if N % 2 != 0:
+        raise ValueError("Для формули Сімпсона N має бути парним.")
+
+    h = (b - a) / N
+    x = np.linspace(a, b, N + 1)
     y = f(x)
 
-    S = y[0] + y[-1]
+    odd_sum = np.sum(y[1:N:2])     # f1 + f3 + ... + fN-1
+    even_sum = np.sum(y[2:N-1:2])  # f2 + f4 + ... + fN-2
 
-    # додаю внутрішні точки
-    for i in range(1, n):
-        if i % 2 == 0:
-            S += 2 * y[i]
-        else:
-            S += 4 * y[i]
+    I = (h / 3) * (y[0] + 4 * odd_sum + 2 * even_sum + y[N])
+    return I
 
-    return S * h / 3
-
-# ДОСЛІДЖЕННЯ ПОХИБКИ
-# будуємо графік залежності похибки від n
-n_values = range(2, 100, 2)
-errors = []
-
-for n in n_values:
-    I = simpson(f, a, b, n)
-    error = abs(I_exact - I)
-    errors.append(error)
-
-
-# ПОХИБКА ДЛЯ ФІКСОВАНОГО n
-n = 16
-I_n = simpson(f, a, b, n)
-error_n = abs(I_exact - I_n)
-
-print("\n= Сімпсон =")
-print("Інтеграл:", I_n)
-print("Похибка:", error_n)
-
-
-# 6. МЕТОД РУНГЕ-РОМБЕРГА
-# уточнення значення інтегралу
-def runge_romberg(I_h, I_h2, p):
-    return I_h2 + (I_h2 - I_h) / (2**p - 1)
-
-I_h = simpson(f, a, b, n)
-I_h2 = simpson(f, a, b, 2*n)
-
-p = 4  # порядок точності методу Сімпсона
-I_rr = runge_romberg(I_h, I_h2, p)
-
-print("\n= Рунге-Ромберг =")
-print("Уточнене значення:", I_rr)
-print("Похибка:", abs(I_exact - I_rr))
-
-# 7. МЕТОД ЕЙТКЕНА
-# також покращує точність і дозволяє оцінити порядок
 # =========================================================
-def aitken(I1, I2, I3):
-    denom = (I1 - 2*I2 + I3)
-    if abs(denom) < 1e-12:
-        return I3
-    return I3 + (I3 - I2)**2 / denom
+# 4. ДОСЛІДЖЕННЯ похибки eps(N) = |I(N) - I0|
 
-I1 = simpson(f, a, b, n)
-I2 = simpson(f, a, b, 2*n)
-I3 = simpson(f, a, b, 4*n)
+# =========================================================
+eps_target = 1e-12
+N_values = np.arange(10, 1001, 2)   # парні N
+errors = []
+integrals = []
 
-I_aitken = aitken(I1, I2, I3)
+for N in N_values:
+    I_N = simpson(f, a, b, N)
+    integrals.append(I_N)
+    errors.append(abs(I_N - I0))
 
-print("\n= Ейткен =")
-print("Уточнене значення:", I_aitken)
-print("Похибка:", abs(I_exact - I_aitken))
+N_opt = None
+eps_opt = None
 
-# 8. АДАПТИВНИЙ МЕТОД СІМПСОНА
-# автоматично змінює крок для досягнення точності
+for N, err in zip(N_values, errors):
+    if err <= eps_target:
+        N_opt = N
+        eps_opt = err
+        break
+
+print("\n=== Пошук Nopt ===")
+if N_opt is not None:
+    print("Nopt =", N_opt)
+    print("epsopt =", eps_opt)
+else:
+    print("На відрізку N = 10..1000 точність 1e-12 не досягнута.")
+
+# =========================================================
+# 5. ВИБІР N0 ~ Nopt / 10, N0 кратне 8
+
+# =========================================================
+if N_opt is not None:
+    N0 = max(8, int(round((N_opt / 10) / 8) * 8))
+else:
+    N0 = 16
+
+# підстраховка
+if N0 % 8 != 0:
+    N0 += 8 - (N0 % 8)
+
+I_N0 = simpson(f, a, b, N0)
+eps0 = abs(I_N0 - I0)
+
+print("\n=== Обчислення при N0 ===")
+print("N0 =", N0)
+print("I(N0) =", I_N0)
+print("eps0 =", eps0)
+
+# =========================================================
+# 6. МЕТОД РУНГЕ-РОМБЕРГА
+
+# =========================================================
+I_N0_2 = simpson(f, a, b, N0 // 2)
+I_R = I_N0 + (I_N0 - I_N0_2) / 15
+eps_R = abs(I_R - I0)
+
+print("\n=== Метод Рунге-Ромберга ===")
+print("I(N0/2) =", I_N0_2)
+print("IR =", I_R)
+print("epsR =", eps_R)
+
+# =========================================================
+# 7. МЕТОД ЕЙТКЕНА
+
+# =========================================================
+I_N0_4 = simpson(f, a, b, N0 // 4)
+
+num = I_N0 - I_N0_2
+den = I_N0_2 - I_N0_4
+
+if abs(den) < 1e-15 or abs(num) < 1e-15:
+    p_A = None
+    I_A = I_N0
+else:
+    ratio = num / den
+    p_A = -np.log2(abs(ratio))
+    I_A = I_N0 + (I_N0 - I_N0_2) / (2**p_A - 1)
+
+eps_A = abs(I_A - I0)
+
+print("\n=== Метод Ейткена ===")
+print("I(N0/4) =", I_N0_4)
+print("I(N0/2) =", I_N0_2)
+print("I(N0)   =", I_N0)
+
+if p_A is not None:
+    print("pA =", p_A)
+    print("IA =", I_A)
+else:
+    print("pA не вдалося обчислити коректно.")
+    print("IA =", I_A)
+
+print("epsA =", eps_A)
+
+# =========================================================
+# 8. АДАПТИВНИЙ АЛГОРИТМ СІМПСОНА
+# =========================================================
+def simpson_local(f, a, b):
+    c = (a + b) / 2
+    return (b - a) * (f(a) + 4 * f(c) + f(b)) / 6
+
 def adaptive_simpson(f, a, b, eps):
-    # локальна формула Сімпсона
-    def simpson_local(f, a, b):
-        c = (a + b) / 2
-        return (f(a) + 4*f(c) + f(b)) * (b - a) / 6
+    eval_count = 0
 
-    # рекурсивна частина
-    def recursive(f, a, b, eps, whole):
+    def recursive(a, b, eps, whole):
+        nonlocal eval_count
         c = (a + b) / 2
 
         left = simpson_local(f, a, c)
         right = simpson_local(f, c, b)
+        eval_count += 2  # умовно рахуємо нові локальні обчислення
 
-        # перевірка точності
-        if abs(left + right - whole) < 15 * eps:
+        if abs(left + right - whole) <= 15 * eps:
             return left + right + (left + right - whole) / 15
 
-        # рекурсивне ділення
-        return recursive(f, a, c, eps/2, left) + \
-               recursive(f, c, b, eps/2, right)
+        return recursive(a, c, eps / 2, left) + recursive(c, b, eps / 2, right)
 
-    return recursive(f, a, b, eps, simpson_local(f, a, b))
+    whole = simpson_local(f, a, b)
+    eval_count += 3
+    I_ad = recursive(a, b, eps, whole)
+    return I_ad, eval_count
 
-I_adaptive = adaptive_simpson(f, a, b, 1e-5)
+eps_list = [1e-2, 1e-4, 1e-6, 1e-8]
+adaptive_results = []
 
-print("\n= Адаптивний метод =")
-print("Інтеграл:", I_adaptive)
-print("Похибка:", abs(I_exact - I_adaptive))
+print("\n=== Адаптивний алгоритм ===")
+for eps in eps_list:
+    I_ad, calls = adaptive_simpson(f, a, b, eps)
+    err = abs(I_ad - I0)
+    adaptive_results.append((eps, I_ad, err, calls))
+    print(f"eps = {eps:1.0e} | I = {I_ad:.15f} | error = {err:.3e} | calls = {calls}")
 
-print("\n=== Порівняння ===")
-print("Сімпсон:", I_n)
-print("Рунге-Ромберг:", I_rr)
-print("Ейткен:", I_aitken)
-print("Адаптивний:", I_adaptive)
-
-# 9. ПОБУДОВА ГРАФІКА ФУНКЦІЇ
 # =========================================================
-x = np.linspace(0, 24, 1000)
-y = f(x)
+# 9. ПОРІВНЯННЯ
+# =========================================================
+print("\n=== Порівняння методів ===")
+print("I0 (точне)      =", I0)
+print("I(N0)           =", I_N0)
+print("IR              =", I_R)
+print("IA              =", I_A)
+print("eps0            =", eps0)
+print("epsR            =", eps_R)
+print("epsA            =", eps_A)
 
-plt.figure(figsize=(6, 10))
+# =========================================================
+# 10. ГРАФІКИ
+# =========================================================
+x_plot = np.linspace(a, b, 1000)
+y_plot = f(x_plot)
 
-plt.subplot(3,1,1)
-plt.plot(x, y)
-plt.title("Графік навантаження на сервер")
-plt.xlabel("Час (год)")
-plt.ylabel("f(x)")
-plt.grid()
+plt.figure(figsize=(7, 12))
 
-plt.subplot(3,1,2)
-plt.plot(n_values, errors)
-plt.xlabel("Кількість розбиттів n")
+plt.subplot(3, 1, 1)
+plt.plot(x_plot, y_plot)
+plt.title("Графік функції навантаження на сервер")
+plt.xlabel("Час, x (год)")
+plt.ylabel("Навантаження, f(x)")
+plt.grid(True)
+
+plt.subplot(3, 1, 2)
+plt.plot(N_values, errors)
+plt.title("Залежність похибки eps(N) = |I(N) - I0|")
+plt.xlabel("Кількість розбиттів N")
 plt.ylabel("Похибка")
-plt.title("Залежність похибки від n (Сімпсон)")
-plt.grid()
+plt.grid(True)
 
-plt.subplot(3,1,3)
-plt.semilogy(n_values, errors)
-plt.title("Логарифмічна залежність похибки")
-plt.xlabel("n")
-plt.ylabel("log(похибки)")
-plt.grid()
+plt.subplot(3, 1, 3)
+plt.semilogy(N_values, errors)
+plt.title("Логарифмічний графік похибки")
+plt.xlabel("Кількість розбиттів N")
+plt.ylabel("log(eps(N))")
+plt.grid(True)
 
-plt.tight_layout(pad=3)
+plt.tight_layout()
 plt.show()
